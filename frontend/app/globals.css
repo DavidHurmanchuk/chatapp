@@ -1,0 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #__next { height: 100%; }
+  body {
+    @apply antialiased bg-bg-base text-txt-primary font-ui;
+    font-size: 14px;
+  }
+  * { box-sizing: border-box; }
+
+  ::-webkit-scrollbar       { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full bg-line-strong; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-txt-muted; }
+
+  ::selection { @apply bg-brand-bg text-txt-primary; }
+}
+
+@layer components {
+  .bubble-own   { border-radius: 18px 4px 18px 18px; }
+  .bubble-other { border-radius: 4px 18px 18px 18px; }
+  .bubble-same  { border-radius: 18px; }
+
+  .icon-btn {
+    @apply flex items-center justify-center transition-all duration-150 border cursor-pointer rounded-xl border-line-strong bg-bg-raised text-txt-muted;
+  }
+  .icon-btn:hover {
+    @apply text-white bg-brand border-brand;
+  }
+
+  .sidebar-section {
+    @apply text-[10px] font-bold tracking-widest uppercase text-txt-muted px-4 pt-5 pb-1.5;
+  }
+
+  .conv-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-2xl cursor-pointer mb-0.5
+           transition-colors duration-150;
+  }
+  .conv-item:hover { @apply bg-hover; }
+  .conv-item.active { @apply bg-active; }
+
+  .chat-input-field {
+    @apply w-full bg-transparent border-none outline-none resize-none text-txt-primary placeholder-txt-muted font-ui;
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center px-4;
+    background: rgba(0,0,0,0.65);
+  }
+  .modal-box {
+    @apply w-full overflow-hidden rounded-3xl;
+    max-width: 420px;
+    background: #161b27;
+    border: 1px solid #252d3d;
+  }
+
+  .btn-primary {
+    @apply flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all duration-150 cursor-pointer;
+    background: #4f7cff;
+    border: none;
+  }
+  .btn-primary:hover { background: #3b5fd4; }
+  .btn-primary:disabled { @apply cursor-default opacity-40; }
+
+  .btn-ghost {
+    @apply flex-1 py-2.5 rounded-xl font-bold text-sm transition-all duration-150 cursor-pointer;
+    background: #1f2638;
+    border: 1px solid #252d3d;
+    color: #8891a8;
+  }
+  .btn-ghost:hover { color: #e8eaf0; background: #252d3d; }
+
+  .btn-danger {
+    @apply flex-1 py-2.5 rounded-xl font-bold text-sm transition-all duration-150 cursor-pointer;
+    background: #ff6b6b22;
+    border: 1px solid #ff6b6b44;
+    color: #ff6b6b;
+  }
+  .btn-danger:hover { background: #ff6b6b; color: #fff; }
+}
