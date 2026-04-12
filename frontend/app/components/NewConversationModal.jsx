@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import Avatar from "./Avatar.jsx";
 
+import { apiFetch } from "../utils/api.js";
+
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 export default function NewConversationModal({ onClose, onCreated }) {
@@ -32,9 +34,9 @@ export default function NewConversationModal({ onClose, onCreated }) {
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(
-          `${API}/api/users/search?q=${encodeURIComponent(search)}`,
-          { credentials: "include" },
+        const res = await apiFetch(
+          `/api/users/search?q=${encodeURIComponent(search)}`,
+          {},
         );
         const data = await res.json();
         setResults(Array.isArray(data) ? data : []);
@@ -52,17 +54,15 @@ export default function NewConversationModal({ onClose, onCreated }) {
       let res, data;
       if (tab === "dm") {
         if (!selected[0]) return;
-        res = await fetch(`${API}/api/conversations/dm`, {
+        res = await apiFetch(`/api/conversations/dm`, {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId: selected[0].id }),
         });
       } else if (tab === "group") {
         if (!groupName.trim()) return;
-        res = await fetch(`${API}/api/conversations/group`, {
+        res = await apiFetch(`/api/conversations/group`, {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: groupName.trim(),
@@ -72,9 +72,8 @@ export default function NewConversationModal({ onClose, onCreated }) {
           }),
         });
       } else {
-        res = await fetch(`${API}/api/conversations/ai`, {
+        res = await apiFetch(`/api/conversations/ai`, {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
         });
       }

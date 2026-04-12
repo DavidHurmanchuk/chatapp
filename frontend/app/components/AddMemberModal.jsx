@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import Avatar from "./Avatar.jsx";
 
+import { apiFetch } from "../utils/api.js";
+
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 export default function AddMemberModal({
@@ -29,9 +31,9 @@ export default function AddMemberModal({
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(
-          `${API}/api/users/search?q=${encodeURIComponent(search)}`,
-          { credentials: "include" },
+        const res = await apiFetch(
+          `/api/users/search?q=${encodeURIComponent(search)}`,
+          {},
         );
         const data = await res.json();
         setResults(
@@ -50,9 +52,8 @@ export default function AddMemberModal({
   const handleAdd = async (user) => {
     setAdding(user.id);
     try {
-      const res = await fetch(`${API}/api/conversations/${conv.id}/members`, {
+      const res = await apiFetch(`/api/conversations/${conv.id}/members`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id }),
       });

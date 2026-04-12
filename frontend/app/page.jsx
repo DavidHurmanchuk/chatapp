@@ -9,6 +9,7 @@ import ChatInput from "./components/ChatInput.jsx";
 import NewConversationModal from "./components/NewConversationModal.jsx";
 import LogoutModal from "./components/LogoutModal.jsx";
 import { useSocket } from "./hooks/useSocket.js";
+import { apiFetch, getToken, removeToken } from "./utils/api.js";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -63,10 +64,9 @@ export default function ChatPage() {
           ? prev
           : [...prev, message],
       );
-      fetch(`${API}/api/conversations/${convId}/read`, {
-        method: "POST",
-        credentials: "include",
-      }).catch(() => {});
+      apiFetch(`/api/conversations/${convId}/read`, { method: "POST" }).catch(
+        () => {},
+      );
     }
     setConversations((prev) =>
       prev.map((c) =>
@@ -165,7 +165,7 @@ export default function ChatPage() {
   });
 
   useEffect(() => {
-    fetch(`${API}/api/auth/me`, { credentials: "include" })
+    apiFetch(`/api/auth/me`)
       .then((r) => r.json())
       .then((data) => {
         if (data.user) setUser(data.user);
@@ -177,7 +177,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!user) return;
-    fetch(`${API}/api/conversations`, { credentials: "include" })
+    apiFetch(`/api/conversations`)
       .then((r) => r.json())
       .then((data) => {
         if (!Array.isArray(data)) return;
@@ -196,9 +196,7 @@ export default function ChatPage() {
     if (!activeConv?.id) return;
     setMessages([]);
     setHasMore(false);
-    fetch(`${API}/api/conversations/${activeConv.id}/messages`, {
-      credentials: "include",
-    })
+    apiFetch(`/api/conversations/${activeConv.id}/messages`)
       .then((r) => r.json())
       .then((data) => {
         if (data.messages) {
@@ -209,9 +207,8 @@ export default function ChatPage() {
         }
       })
       .catch(console.error);
-    fetch(`${API}/api/conversations/${activeConv.id}/read`, {
+    apiFetch(`/api/conversations/${activeConv.id}/read`, {
       method: "POST",
-      credentials: "include",
     }).catch(() => {});
     setConversations((prev) =>
       prev.map((c) =>
@@ -280,11 +277,10 @@ export default function ChatPage() {
     });
 
     try {
-      const res = await fetch(
-        `${API}/api/conversations/${activeConv.id}/messages`,
+      const res = await apiFetch(
+        `/api/conversations/${activeConv.id}/messages`,
         {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content, socketId }),
         },
@@ -315,14 +311,13 @@ export default function ChatPage() {
       setSending(false);
     }
   };
-  
+
   const handleReact = async (msgId, emoji) => {
     if (!activeConv?.id || String(msgId).startsWith("tmp-")) return;
-    await fetch(
-      `${API}/api/conversations/${activeConv.id}/messages/${msgId}/reactions`,
+    await apiFetch(
+      `/api/conversations/${activeConv.id}/messages/${msgId}/reactions`,
       {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ emoji }),
       },
@@ -340,9 +335,8 @@ export default function ChatPage() {
   };
 
   const handleRename = async (conv, newName) => {
-    const res = await fetch(`${API}/api/conversations/${conv.id}/name`, {
+    const res = await apiFetch(`/api/conversations/${conv.id}/name`, {
       method: "PATCH",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newName }),
     }).catch(console.error);
@@ -358,10 +352,9 @@ export default function ChatPage() {
   };
 
   const handleDelete = async (conv) => {
-    await fetch(`${API}/api/conversations/${conv.id}`, {
-      method: "DELETE",
-      credentials: "include",
-    }).catch(console.error);
+    await apiFetch(`/api/conversations/${conv.id}`, { method: "DELETE" }).catch(
+      console.error,
+    );
     setConversations((prev) =>
       prev.filter((c) => String(c.id) !== String(conv.id)),
     );
@@ -372,10 +365,7 @@ export default function ChatPage() {
   };
 
   const logout = async () => {
-    await fetch(`${API}/api/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
+    await apiFetch(`/api/auth/logout`, { method: "POST" });
     router.replace("/login");
   };
 

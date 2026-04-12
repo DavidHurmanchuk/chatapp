@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
+import { getToken } from "../utils/api.js";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -20,8 +21,10 @@ export function useSocket({
   const [socketId, setSocketId] = useState(null);
 
   useEffect(() => {
+    const token = getToken();
+
     socketRef.current = io(API, {
-      withCredentials: true,
+      auth: { token },
       transports: ["polling", "websocket"],
     });
 
