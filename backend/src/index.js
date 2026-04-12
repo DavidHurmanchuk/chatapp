@@ -37,9 +37,15 @@ app.use(
   }),
 );
 
+app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+app.options("*", cors({ origin: FRONTEND_URL, credentials: true }));
+
+const skipOptions = (req) => req.method === "OPTIONS";
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
+  skip: skipOptions,
   message: { error: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -48,6 +54,7 @@ const authLimiter = rateLimit({
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,
+  skip: skipOptions,
   message: { error: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -56,7 +63,6 @@ const generalLimiter = rateLimit({
 app.use("/api/auth", authLimiter);
 app.use("/api", generalLimiter);
 
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json({ limit: "10kb" }));
 app.use(cookieParser());
 app.use(
@@ -91,9 +97,9 @@ const PORT = process.env.PORT || 4000;
 mongoose
   .connect(process.env.MONGODB_URI || "mongodb://localhost:27017/chatapp")
   .then(() => {
-    console.log("MongoDB connected");
+    console.log("✅ MongoDB connected");
     server.listen(PORT, () =>
-      console.log(`Backend running on http://localhost:${PORT}`),
+      console.log(`🚀 Backend running on http://localhost:${PORT}`),
     );
   })
   .catch((err) => {
