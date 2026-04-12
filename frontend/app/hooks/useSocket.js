@@ -22,7 +22,7 @@ export function useSocket({
   useEffect(() => {
     socketRef.current = io(API, {
       withCredentials: true,
-      transports: ["polling"],
+      transports: ["polling", "websocket"],
     });
 
     socketRef.current.on("connect", () => {
