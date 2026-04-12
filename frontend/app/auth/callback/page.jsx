@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { setToken } from "../../utils/api.js";
 
-export default function AuthCallback() {
+function CallbackHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -18,6 +18,10 @@ export default function AuthCallback() {
     }
   }, []);
 
+  return null;
+}
+
+export default function AuthCallback() {
   return (
     <div
       style={{
@@ -31,6 +35,9 @@ export default function AuthCallback() {
       <p style={{ color: "#4a5570", fontFamily: "'Syne', sans-serif" }}>
         Signing in…
       </p>
+      <Suspense>
+        <CallbackHandler />
+      </Suspense>
     </div>
   );
 }
