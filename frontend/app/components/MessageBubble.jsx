@@ -66,7 +66,7 @@ function EmojiPicker({ onSelect, onClose }) {
             onSelect(e);
             onClose();
           }}
-          className="flex items-center justify-center w-8 h-8 text-lg transition-colors bg-transparent border-none rounded-lg cursor-pointer hover:bg-bg-raised"
+          className="w-8 h-8 rounded-lg border-none bg-transparent cursor-pointer text-lg flex items-center justify-center hover:bg-bg-raised transition-colors"
         >
           {e}
         </button>
@@ -75,11 +75,13 @@ function EmojiPicker({ onSelect, onClose }) {
   );
 }
 
-function Reactions({ reactions, onReact, myId }) {
-  if (!reactions?.length) return null;
+function Reactions({ reactions, onReact, myId, optimisticReactions }) {
+  // Merge real reactions with optimistic ones
+  const displayed = optimisticReactions ?? reactions;
+  if (!displayed?.length) return null;
   return (
     <div className="flex flex-wrap gap-1 mt-1.5">
-      {reactions.map((r) => {
+      {displayed.map((r) => {
         const mine = r.users?.includes(myId);
         return (
           <button
@@ -100,16 +102,17 @@ function Reactions({ reactions, onReact, myId }) {
   );
 }
 
+// Markdown компоненти для AI повідомлень
 const mdComponents = {
   p: ({ children }) => (
-    <p className="mb-2 leading-relaxed last:mb-0">{children}</p>
+    <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
   ),
   strong: ({ children }) => (
     <strong className="font-bold text-txt-primary">{children}</strong>
   ),
   em: ({ children }) => <em className="italic">{children}</em>,
   h1: ({ children }) => (
-    <h1 className="mt-3 mb-2 text-base font-black first:mt-0 text-txt-primary">
+    <h1 className="text-base font-black mb-2 mt-3 first:mt-0 text-txt-primary">
       {children}
     </h1>
   ),
@@ -119,7 +122,7 @@ const mdComponents = {
     </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="mt-2 mb-1 text-sm font-bold first:mt-0 text-txt-primary">
+    <h3 className="text-sm font-bold mb-1 mt-2 first:mt-0 text-txt-primary">
       {children}
     </h3>
   ),
@@ -131,7 +134,7 @@ const mdComponents = {
   ),
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
   blockquote: ({ children }) => (
-    <blockquote className="pl-3 my-2 italic border-l-2 border-ai text-txt-secondary">
+    <blockquote className="border-l-2 border-ai pl-3 my-2 text-txt-secondary italic">
       {children}
     </blockquote>
   ),
@@ -156,15 +159,15 @@ const mdComponents = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="underline transition-colors text-brand underline-offset-2 hover:text-brand-dark"
+      className="text-brand underline underline-offset-2 hover:text-brand-dark transition-colors"
     >
       {children}
     </a>
   ),
-  hr: () => <hr className="my-3 border-line-strong" />,
+  hr: () => <hr className="border-line-strong my-3" />,
   table: ({ children }) => (
-    <div className="my-2 overflow-x-auto">
-      <table className="w-full text-sm border-collapse">{children}</table>
+    <div className="overflow-x-auto my-2">
+      <table className="text-sm border-collapse w-full">{children}</table>
     </div>
   ),
   th: ({ children }) => (
@@ -189,12 +192,47 @@ export default function MessageBubble({
 }) {
   const [hovered, setHovered] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [optimisticReacts, setOptimisticReacts] = useState(null);
 
   const isOwn = msg.sender === currentUser;
   const isAI = msg.sender === "AI Assistant";
   const sameSender = prevMsg?.sender === msg.sender;
   const isTemp = String(msg.id).startsWith("tmp-");
   const isTyping = msg.content === "__typing__";
+
+  // Optimistic react  оновлюємо UI одразу, потім сервер підтверджує
+  const handleReact = (emoji) => {
+    const currentReacts = optimisticReacts ?? msg.reactions ?? [];
+    const existing = currentReacts.find((r) => r.emoji === emoji);
+
+    let next;
+    if (existing) {
+      const hasIt = existing.users?.includes(currentUserId);
+      if (hasIt) {
+        // Прибираємо реакцію
+        const users = existing.users.filter((u) => u !== currentUserId);
+        next =
+          users.length === 0
+            ? currentReacts.filter((r) => r.emoji !== emoji)
+            : currentReacts.map((r) =>
+                r.emoji === emoji ? { ...r, users } : r,
+              );
+      } else {
+        next = currentReacts.map((r) =>
+          r.emoji === emoji ? { ...r, users: [...r.users, currentUserId] } : r,
+        );
+      }
+    } else {
+      next = [...currentReacts, { emoji, users: [currentUserId] }];
+    }
+
+    setOptimisticReacts(next); // Одразу показуємо
+    onReact(msg.id, emoji).catch(() => setOptimisticReacts(null)); // Rollback при помилці
+  };
+
+  useEffect(() => {
+    setOptimisticReacts(null);
+  }, [msg.reactions]);
 
   const readBy = msg.readBy ?? [];
   const allRead =
@@ -251,8 +289,8 @@ export default function MessageBubble({
               {QUICK.map((e) => (
                 <button
                   key={e}
-                  onClick={() => onReact(msg.id, e)}
-                  className="flex items-center justify-center text-base transition-colors bg-transparent border-none rounded-lg cursor-pointer w-7 h-7 hover:bg-bg-raised"
+                  onClick={() => handleReact(e)}
+                  className="w-7 h-7 rounded-lg border-none bg-transparent cursor-pointer text-base flex items-center justify-center hover:bg-bg-raised transition-colors"
                 >
                   {e}
                 </button>
@@ -266,7 +304,10 @@ export default function MessageBubble({
                 </button>
                 {showPicker && (
                   <EmojiPicker
-                    onSelect={(e) => onReact(msg.id, e)}
+                    onSelect={(e) => {
+                      handleReact(e);
+                      setShowPicker(false);
+                    }}
                     onClose={() => setShowPicker(false)}
                   />
                 )}
@@ -274,12 +315,14 @@ export default function MessageBubble({
             </div>
           )}
 
+          {/* Bubble */}
           <div
             className={`${bubbleClass} ${radiusClass} ${isTemp ? "opacity-60" : ""} transition-opacity duration-200`}
           >
             {isTyping ? (
               <TypingDots />
             ) : isAI ? (
+              // AI повідомлення — markdown
               <div className="px-3.5 py-2.5 text-[13.5px] text-txt-primary markdown-ai">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
@@ -289,6 +332,7 @@ export default function MessageBubble({
                 </ReactMarkdown>
               </div>
             ) : (
+              // Звичайне повідомлення — plain text
               <p className="px-3.5 py-2.5 text-[14px] leading-relaxed text-txt-primary break-words whitespace-pre-wrap">
                 {msg.content}
               </p>
@@ -298,8 +342,9 @@ export default function MessageBubble({
 
         <Reactions
           reactions={msg.reactions}
-          onReact={(e) => onReact(msg.id, e)}
+          onReact={handleReact}
           myId={currentUserId}
+          optimisticReactions={optimisticReacts}
         />
 
         {!isTyping && (

@@ -102,8 +102,8 @@ function RenameModal({ conv, onClose, onConfirm }) {
       className="modal-overlay"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="flex flex-col gap-4 p-6 modal-box">
-        <p className="text-base font-black text-txt-primary">Rename Group</p>
+      <div className="modal-box p-6 flex flex-col gap-4">
+        <p className="font-black text-base text-txt-primary">Rename Group</p>
         <input
           autoFocus
           value={val}
@@ -137,6 +137,7 @@ function ConvItem({
   onRename,
   onDelete,
   onLeave,
+  isOnline,
 }) {
   const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -152,7 +153,18 @@ function ConvItem({
         onMouseLeave={() => setHovered(false)}
         className={`relative flex items-center gap-3 px-3 py-2.5 rounded-2xl cursor-pointer mb-0.5 transition-colors duration-150 ${isActive ? "bg-active" : hovered ? "bg-hover" : ""}`}
       >
-        <Avatar name={displayName} size={50} isAI={conv.type === "ai"} />
+        <div className="relative shrink-0">
+          <Avatar name={displayName} size={50} isAI={conv.type === "ai"} />
+          {conv.type === "dm" &&
+            conv.members?.some(
+              (m) => String(m.id) !== String(currentUserId) && isOnline?.(m.id),
+            ) && (
+              <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-success border-2 border-bg-sidebar" />
+            )}
+          {conv.type === "ai" && (
+            <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-ai border-2 border-bg-sidebar" />
+          )}
+        </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-0.5">
@@ -177,6 +189,7 @@ function ConvItem({
           </p>
         </div>
 
+        {/* Three-dot */}
         {(hovered || menuOpen) && (
           <button
             onClick={(e) => {
@@ -241,6 +254,7 @@ export default function Sidebar({
   onRename,
   onDelete,
   onLeave,
+  isOnline,
 }) {
   const [search, setSearch] = useState("");
 
@@ -253,17 +267,18 @@ export default function Sidebar({
 
   return (
     <aside
-      className="flex flex-col overflow-hidden transition-all duration-300 border-r shrink-0 border-line"
+      className="flex flex-col shrink-0 overflow-hidden transition-all duration-300 border-r border-line"
       style={{
         width: open ? 300 : 0,
         minWidth: open ? 300 : 0,
         background: "#0f1420",
       }}
     >
+      {/* Header */}
       <div className="px-4 pt-4 pb-3 border-b border-line shrink-0">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex items-center justify-center w-8 h-8 text-sm font-black text-white rounded-xl bg-gradient-to-br from-brand to-violet-500">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand to-violet-500 flex items-center justify-center text-sm font-black text-white">
               C
             </div>
             <span className="font-black text-[17px] text-txt-primary tracking-tight">
@@ -274,7 +289,7 @@ export default function Sidebar({
             <button
               onClick={onNewConversation}
               title="New conversation"
-              className="w-8 h-8 icon-btn"
+              className="icon-btn w-8 h-8"
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "#4f7cff";
                 e.currentTarget.style.color = "#fff";
@@ -289,7 +304,7 @@ export default function Sidebar({
             <button
               onClick={onLogoutRequest}
               title="Sign out"
-              className="w-8 h-8 icon-btn"
+              className="icon-btn w-8 h-8"
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "#ff6b6b22";
                 e.currentTarget.style.color = "#ff6b6b";
@@ -319,8 +334,9 @@ export default function Sidebar({
           </div>
         </div>
 
+        {/* Search */}
         <div className="relative">
-          <span className="absolute text-sm -translate-y-1/2 left-3 top-1/2 text-txt-muted">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-txt-muted text-sm">
             🔍
           </span>
           <input
@@ -332,6 +348,7 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* Current user */}
       <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-line shrink-0">
         <Avatar name={currentUser} size={34} />
         <div>
@@ -345,9 +362,10 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* List */}
       <div className="flex-1 overflow-y-auto p-1.5">
         {filtered.length === 0 && (
-          <div className="px-4 py-10 text-center">
+          <div className="text-center px-4 py-10">
             <p className="text-txt-muted text-[13px]">
               {search ? "No results" : "No conversations yet"}
             </p>
@@ -368,6 +386,7 @@ export default function Sidebar({
             onRename={onRename}
             onDelete={onDelete}
             onLeave={onLeave}
+            isOnline={isOnline}
           />
         ))}
       </div>

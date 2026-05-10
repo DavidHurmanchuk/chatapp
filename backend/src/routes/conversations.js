@@ -1,18 +1,23 @@
 import express from "express";
 import OpenAI from "openai";
+import { config } from "../config/index.js";
+import { HTTP_STATUS } from "../constants/http.js";
+import { SOCKET_EVENTS } from "../constants/events.js";
 import Conversation from "../models/Conversation.js";
 import ConversationMessage from "../models/ConversationMessage.js";
 import User from "../models/User.js";
 import { authMiddleware } from "../middleware/auth.js";
-import { io } from "../index.js";
+import { io } from "../socket/index.js";
 
 const router = express.Router();
 router.use(authMiddleware);
 
 const groq = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: config.GROQ_API_KEY,
   baseURL: "https://api.groq.com/openai/v1",
 });
+
+// Helpers
 
 function getDMName(conv, myId) {
   const other = conv.members.find((m) => String(m._id) !== String(myId));
@@ -54,11 +59,13 @@ function formatMsg(m) {
   };
 }
 
+// GET /api/conversations
 router.get("/", async (req, res) => {
   try {
     const myId = String(req.user.id);
     const convs = await Conversation.find({
       members: req.user.id,
+      // Для DM — не показуємо якщо приховано
       $or: [
         { type: { $ne: "dm" } },
         { type: "dm", hiddenBy: { $ne: req.user.id } },
@@ -71,17 +78,26 @@ router.get("/", async (req, res) => {
     res.json(convs.map((c) => formatConv(c, myId)));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to fetch conversations" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to fetch conversations" });
   }
 });
 
+// POST /api/conversations/dm
 router.post("/dm", async (req, res) => {
   const { userId } = req.body;
-  if (!userId) return res.status(400).json({ error: "userId is required" });
+  if (!userId)
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .json({ error: "userId is required" });
 
   try {
     const targetUser = await User.findById(userId).lean();
-    if (!targetUser) return res.status(404).json({ error: "User not found" });
+    if (!targetUser)
+      return res
+        .status(HTTP_STATUS.NOT_FOUND)
+        .json({ error: "User not found" });
 
     let conv = await Conversation.findOne({
       type: "dm",
@@ -89,6 +105,7 @@ router.post("/dm", async (req, res) => {
     }).populate("members", "name email avatar");
 
     if (conv) {
+      // Якщо був прихований — знову показуємо
       await Conversation.findByIdAndUpdate(conv._id, {
         $pull: { hiddenBy: req.user.id },
       });
@@ -105,23 +122,30 @@ router.post("/dm", async (req, res) => {
       .lean();
 
     io.to(`user:${userId}`).emit(
-      "new_conversation",
+      SOCKET_EVENTS.NEW_CONVERSATION,
       formatConv(populated, String(userId)),
     );
-    res.status(201).json(formatConv(populated, String(req.user.id)));
+    res
+      .status(HTTP_STATUS.CREATED)
+      .json(formatConv(populated, String(req.user.id)));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to create DM" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to create DM" });
   }
 });
 
+// POST /api/conversations/group
 router.post("/group", async (req, res) => {
   const { name, memberIds, withAI, aiTrigger } = req.body;
   if (!name || typeof name !== "string")
-    return res.status(400).json({ error: "name is required" });
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .json({ error: "name is required" });
   if (name.trim().length < 1 || name.trim().length > 50)
     return res
-      .status(400)
+      .status(HTTP_STATUS.BAD_REQUEST)
       .json({ error: "Group name must be 1-50 characters" });
 
   try {
@@ -142,17 +166,23 @@ router.post("/group", async (req, res) => {
 
     members.forEach((memberId) => {
       if (String(memberId) !== String(req.user.id)) {
-        io.to(`user:${memberId}`).emit("new_conversation", formatted);
+        io.to(`user:${memberId}`).emit(
+          SOCKET_EVENTS.NEW_CONVERSATION,
+          formatted,
+        );
       }
     });
 
-    res.status(201).json(formatted);
+    res.status(HTTP_STATUS.CREATED).json(formatted);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to create group" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to create group" });
   }
 });
 
+// POST /api/conversations/ai
 router.post("/ai", async (req, res) => {
   try {
     const existing = await Conversation.findOne({
@@ -167,22 +197,27 @@ router.post("/ai", async (req, res) => {
       members: [req.user.id],
       createdBy: req.user.id,
     });
-    res.status(201).json(formatConv(conv, String(req.user.id)));
+    res.status(HTTP_STATUS.CREATED).json(formatConv(conv, String(req.user.id)));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to create AI chat" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to create AI chat" });
   }
 });
 
+// DELETE /api/conversations/:id
 router.delete("/:id", async (req, res) => {
   try {
     const conv = await Conversation.findOne({
       _id: req.params.id,
       members: req.user.id,
     });
-    if (!conv) return res.status(404).json({ error: "Not found" });
+    if (!conv)
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ error: "Not found" });
 
     if (conv.type === "dm" || conv.type === "ai") {
+      // Ховаємо для себе
       await Conversation.findByIdAndUpdate(req.params.id, {
         $addToSet: { hiddenBy: req.user.id },
       });
@@ -192,17 +227,20 @@ router.delete("/:id", async (req, res) => {
     const isCreator = String(conv.createdBy) === String(req.user.id);
 
     if (isCreator) {
+      // Творець видаляє групу повністю
       await ConversationMessage.deleteMany({ conversationId: req.params.id });
       await Conversation.findByIdAndDelete(req.params.id);
-      io.to(`conv:${req.params.id}`).emit("conversation_deleted", {
+      // Сповіщаємо всіх учасників
+      io.to(`conv:${req.params.id}`).emit(SOCKET_EVENTS.CONVERSATION_DELETED, {
         conversationId: req.params.id,
       });
       return res.json({ deleted: true });
     } else {
+      // Учасник виходить з групи
       await Conversation.findByIdAndUpdate(req.params.id, {
         $pull: { members: req.user.id },
       });
-      io.to(`conv:${req.params.id}`).emit("member_left", {
+      io.to(`conv:${req.params.id}`).emit(SOCKET_EVENTS.MEMBER_LEFT, {
         conversationId: req.params.id,
         userId: req.user.id,
         userName: req.user.name,
@@ -211,24 +249,33 @@ router.delete("/:id", async (req, res) => {
     }
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed" });
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: "Failed" });
   }
 });
 
+// PATCH /api/conversations/:id/name
 router.patch("/:id/name", async (req, res) => {
   const { name } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+  if (!name?.trim())
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .json({ error: "name is required" });
 
   try {
     const conv = await Conversation.findOne({
       _id: req.params.id,
       members: req.user.id,
     });
-    if (!conv) return res.status(404).json({ error: "Not found" });
+    if (!conv)
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ error: "Not found" });
     if (conv.type === "dm" || conv.type === "ai")
-      return res.status(400).json({ error: "Cannot rename this type" });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ error: "Cannot rename this type" });
     if (String(conv.createdBy) !== String(req.user.id))
-      return res.status(403).json({ error: "Only creator can rename" });
+      return res
+        .status(HTTP_STATUS.FORBIDDEN)
+        .json({ error: "Only creator can rename" });
 
     const updated = await Conversation.findByIdAndUpdate(
       req.params.id,
@@ -238,7 +285,7 @@ router.patch("/:id/name", async (req, res) => {
       .populate("members", "name email avatar")
       .lean();
 
-    io.to(`conv:${req.params.id}`).emit("conversation_renamed", {
+    io.to(`conv:${req.params.id}`).emit(SOCKET_EVENTS.CONVERSATION_RENAMED, {
       conversationId: req.params.id,
       name: name.trim(),
     });
@@ -246,24 +293,30 @@ router.patch("/:id/name", async (req, res) => {
     res.json(formatConv(updated, String(req.user.id)));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to rename" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to rename" });
   }
 });
 
+// POST /api/conversations/:id/read
 router.post("/:id/read", async (req, res) => {
   try {
     const myId = String(req.user.id);
+    // Скидаємо лічильник непрочитаних
     await Conversation.findByIdAndUpdate(req.params.id, {
       [`unreadCount.${myId}`]: 0,
     });
 
+    // Помічаємо всі повідомлення як прочитані
     const updated = await ConversationMessage.updateMany(
       { conversationId: req.params.id, readBy: { $ne: req.user.id } },
       { $addToSet: { readBy: req.user.id } },
     );
 
     if (updated.modifiedCount > 0) {
-      io.to(`conv:${req.params.id}`).emit("messages_read", {
+      // Сповіщаємо відправників що їх повідомлення прочитані
+      io.to(`conv:${req.params.id}`).emit(SOCKET_EVENTS.MESSAGES_READ, {
         conversationId: req.params.id,
         userId: myId,
       });
@@ -272,20 +325,22 @@ router.post("/:id/read", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed" });
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: "Failed" });
   }
 });
 
+// GET /api/conversations/:id/messages
 router.get("/:id/messages", async (req, res) => {
   try {
     const conv = await Conversation.findOne({
       _id: req.params.id,
       members: req.user.id,
     });
-    if (!conv) return res.status(403).json({ error: "Access denied" });
+    if (!conv)
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Access denied" });
 
     const limit = Math.min(parseInt(req.query.limit) || 50, 100);
-    const before = req.query.before;
+    const before = req.query.before; // ID повідомлення — завантажуємо старіші за нього
 
     const query = { conversationId: req.params.id };
     if (before) {
@@ -298,41 +353,54 @@ router.get("/:id/messages", async (req, res) => {
       .limit(limit)
       .lean();
 
+    // Рахуємо чи є ще старіші повідомлення
     const hasMore = messages.length === limit;
 
+    // Повертаємо в хронологічному порядку
     res.json({ messages: messages.reverse().map(formatMsg), hasMore });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to fetch messages" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to fetch messages" });
   }
 });
 
+// POST /api/conversations/:id/messages
 router.post("/:id/messages", async (req, res) => {
   const { content, socketId } = req.body;
   if (!content || typeof content !== "string")
-    return res.status(400).json({ error: "content is required" });
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .json({ error: "content is required" });
   if (content.trim().length === 0)
-    return res.status(400).json({ error: "Message cannot be empty" });
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .json({ error: "Message cannot be empty" });
   if (content.length > 4000)
-    return res.status(400).json({ error: "Message too long (max 4000 chars)" });
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .json({ error: "Message too long (max 4000 chars)" });
 
   try {
     const conv = await Conversation.findOne({
       _id: req.params.id,
       members: req.user.id,
     });
-    if (!conv) return res.status(403).json({ error: "Access denied" });
+    if (!conv)
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Access denied" });
 
     const msgDoc = await ConversationMessage.create({
       conversationId: req.params.id,
       senderId: req.user.id,
       senderName: req.user.name,
       content,
-      readBy: [req.user.id],
+      readBy: [req.user.id], // відправник одразу вважається прочитаним
     });
 
     const userMessage = formatMsg(msgDoc);
 
+    // Збільшуємо лічильник непрочитаних для всіх КРІМ відправника
     const otherMembers = conv.members.filter(
       (m) => String(m) !== String(req.user.id),
     );
@@ -347,6 +415,7 @@ router.post("/:id/messages", async (req, res) => {
       $inc: incOps,
     });
 
+    // Відновлюємо чат для тих хто його приховав (нове повідомлення — показуємо знову)
     if (conv.type === "dm") {
       await Conversation.findByIdAndUpdate(req.params.id, {
         $pull: { hiddenBy: { $in: conv.members } },
@@ -356,11 +425,12 @@ router.post("/:id/messages", async (req, res) => {
     const emitTarget = socketId
       ? io.to(`conv:${req.params.id}`).except(socketId)
       : io.to(`conv:${req.params.id}`);
-    emitTarget.emit("new_conv_message", {
+    emitTarget.emit(SOCKET_EVENTS.NEW_CONV_MESSAGE, {
       conversationId: req.params.id,
       message: userMessage,
     });
 
+    // AI відповідь
     const isAIChat = conv.type === "ai";
     const isGroupAI =
       conv.type === "group_ai" && content.startsWith(conv.aiTrigger ?? "/groq");
@@ -425,7 +495,7 @@ router.post("/:id/messages", async (req, res) => {
         const aiEmit = socketId
           ? io.to(`conv:${req.params.id}`).except(socketId)
           : io.to(`conv:${req.params.id}`);
-        aiEmit.emit("new_conv_message", {
+        aiEmit.emit(SOCKET_EVENTS.NEW_CONV_MESSAGE, {
           conversationId: req.params.id,
           message: aiMessage,
         });
@@ -449,7 +519,7 @@ router.post("/:id/messages", async (req, res) => {
           readBy: [],
         });
         const errorMessage = formatMsg(errDoc);
-        io.to(`conv:${req.params.id}`).emit("new_conv_message", {
+        io.to(`conv:${req.params.id}`).emit(SOCKET_EVENTS.NEW_CONV_MESSAGE, {
           conversationId: req.params.id,
           message: errorMessage,
         });
@@ -460,23 +530,33 @@ router.post("/:id/messages", async (req, res) => {
     res.json({ userMessage });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to send message" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to send message" });
   }
 });
 
+// POST /api/conversations/:id/messages/:msgId/reactions
 router.post("/:id/messages/:msgId/reactions", async (req, res) => {
   const { emoji } = req.body;
-  if (!emoji) return res.status(400).json({ error: "emoji is required" });
+  if (!emoji)
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .json({ error: "emoji is required" });
 
   try {
     const conv = await Conversation.findOne({
       _id: req.params.id,
       members: req.user.id,
     });
-    if (!conv) return res.status(403).json({ error: "Access denied" });
+    if (!conv)
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ error: "Access denied" });
 
     const msg = await ConversationMessage.findById(req.params.msgId);
-    if (!msg) return res.status(404).json({ error: "Message not found" });
+    if (!msg)
+      return res
+        .status(HTTP_STATUS.NOT_FOUND)
+        .json({ error: "Message not found" });
 
     const existing = msg.reactions.find((r) => r.emoji === emoji);
 
@@ -485,6 +565,7 @@ router.post("/:id/messages/:msgId/reactions", async (req, res) => {
         (u) => String(u) === String(req.user.id),
       );
       if (hasReacted) {
+        // Прибираємо реакцію
         existing.users = existing.users.filter(
           (u) => String(u) !== String(req.user.id),
         );
@@ -500,7 +581,8 @@ router.post("/:id/messages/:msgId/reactions", async (req, res) => {
     await msg.save();
     const formatted = formatMsg(msg);
 
-    io.to(`conv:${req.params.id}`).emit("reaction_updated", {
+    // Сповіщаємо всіх в кімнаті
+    io.to(`conv:${req.params.id}`).emit(SOCKET_EVENTS.REACTION_UPDATED, {
       conversationId: req.params.id,
       message: formatted,
     });
@@ -508,31 +590,46 @@ router.post("/:id/messages/:msgId/reactions", async (req, res) => {
     res.json(formatted);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to update reaction" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to update reaction" });
   }
 });
 
+// POST /api/conversations/:id/members
+// Додати учасника до групи (будь-який учасник може додати)
 router.post("/:id/members", async (req, res) => {
   const { userId } = req.body;
-  if (!userId) return res.status(400).json({ error: "userId is required" });
+  if (!userId)
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .json({ error: "userId is required" });
 
   try {
     const conv = await Conversation.findOne({
       _id: req.params.id,
       members: req.user.id,
     });
-    if (!conv) return res.status(404).json({ error: "Not found" });
+    if (!conv)
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ error: "Not found" });
     if (conv.type === "dm" || conv.type === "ai")
-      return res.status(400).json({ error: "Cannot add members to this type" });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ error: "Cannot add members to this type" });
 
     const target = await User.findById(userId).lean();
-    if (!target) return res.status(404).json({ error: "User not found" });
+    if (!target)
+      return res
+        .status(HTTP_STATUS.NOT_FOUND)
+        .json({ error: "User not found" });
 
     const alreadyMember = conv.members.some(
       (m) => String(m) === String(userId),
     );
     if (alreadyMember)
-      return res.status(400).json({ error: "Already a member" });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ error: "Already a member" });
 
     await Conversation.findByIdAndUpdate(req.params.id, {
       $push: { members: userId },
@@ -544,11 +641,13 @@ router.post("/:id/members", async (req, res) => {
 
     const formatted = formatConv(updated, String(req.user.id));
 
+    // Сповіщаємо нового учасника
     io.to(`user:${userId}`).emit(
-      "new_conversation",
+      SOCKET_EVENTS.NEW_CONVERSATION,
       formatConv(updated, String(userId)),
     );
-    io.to(`conv:${req.params.id}`).emit("member_joined", {
+    // Сповіщаємо всіх у кімнаті
+    io.to(`conv:${req.params.id}`).emit(SOCKET_EVENTS.MEMBER_JOINED, {
       conversationId: req.params.id,
       user: { id: target._id, name: target.name },
     });
@@ -556,7 +655,9 @@ router.post("/:id/members", async (req, res) => {
     res.json(formatted);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to add member" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Failed to add member" });
   }
 });
 

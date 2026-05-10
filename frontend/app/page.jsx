@@ -10,6 +10,8 @@ import NewConversationModal from "./components/NewConversationModal.jsx";
 import LogoutModal from "./components/LogoutModal.jsx";
 import { useSocket } from "./hooks/useSocket.js";
 import { apiFetch, getToken, removeToken } from "./utils/api.js";
+import { ENDPOINTS } from "./utils/endpoints.js";
+import { useOnlineUsers } from "./hooks/useOnlineUsers.js";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -32,6 +34,8 @@ export default function ChatPage() {
 
   const activeConvRef = useRef(null);
   const inputRef = useRef(null);
+  const { isOnline, handleOnlineUsers, handleUserOnline, handleUserOffline } =
+    useOnlineUsers();
 
   useEffect(() => {
     activeConvRef.current = activeConv;
@@ -40,6 +44,7 @@ export default function ChatPage() {
     if (!sending) inputRef.current?.focus();
   }, [sending]);
 
+  // ── Responsive ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const check = () => {
       const mobile = window.innerWidth < 768;
@@ -56,6 +61,7 @@ export default function ChatPage() {
     if (window.innerWidth < 768) setSidebarOpen(false);
   }, []);
 
+  // ── Socket handlers ────────────────────────────────────────────────────────
   const handleNewConvMessage = useCallback((convId, message) => {
     const isActive = String(activeConvRef.current?.id) === String(convId);
     if (isActive) {
@@ -162,8 +168,12 @@ export default function ChatPage() {
     onConversationRenamed: handleConversationRenamed,
     onMessagesRead: handleMessagesRead,
     onReactionUpdated: handleReactionUpdated,
+    onUserOnline: handleUserOnline,
+    onUserOffline: handleUserOffline,
+    onOnlineUsers: handleOnlineUsers,
   });
 
+  // ── Auth ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     apiFetch(`/api/auth/me`)
       .then((r) => r.json())
@@ -175,6 +185,7 @@ export default function ChatPage() {
       .finally(() => setAuthChecked(true));
   }, []);
 
+  // ── Load conversations ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     apiFetch(`/api/conversations`)
@@ -192,22 +203,24 @@ export default function ChatPage() {
       .catch(console.error);
   }, [user]);
 
+  // ── Load messages ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeConv?.id) return;
     setMessages([]);
     setHasMore(false);
-    apiFetch(`/api/conversations/${activeConv.id}/messages`)
+    apiFetch(ENDPOINTS.CONVERSATIONS.MESSAGES(activeConv.id))
       .then((r) => r.json())
       .then((data) => {
         if (data.messages) {
           setMessages(data.messages);
           setHasMore(data.hasMore ?? false);
         } else if (Array.isArray(data)) {
+          // backwards compat
           setMessages(data);
         }
       })
       .catch(console.error);
-    apiFetch(`/api/conversations/${activeConv.id}/read`, {
+    apiFetch(ENDPOINTS.CONVERSATIONS.READ(activeConv.id), {
       method: "POST",
     }).catch(() => {});
     setConversations((prev) =>
@@ -217,6 +230,7 @@ export default function ChatPage() {
     );
   }, [activeConv?.id]);
 
+  // ── Load older messages (pagination) ──────────────────────────────────────
   const loadMoreMessages = useCallback(async () => {
     if (!activeConv?.id || loadingMore || !hasMore) return;
     const oldest = messages[0];
@@ -239,6 +253,7 @@ export default function ChatPage() {
     }
   }, [activeConv?.id, loadingMore, hasMore, messages]);
 
+  // ── Send message ───────────────────────────────────────────────────────────
   const sendMessage = async () => {
     const content = input.trim();
     if (!content || sending || !activeConv) return;
@@ -278,7 +293,7 @@ export default function ChatPage() {
 
     try {
       const res = await apiFetch(
-        `/api/conversations/${activeConv.id}/messages`,
+        ENDPOINTS.CONVERSATIONS.MESSAGES(activeConv.id),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -312,18 +327,18 @@ export default function ChatPage() {
     }
   };
 
+  // ── Reactions ──────────────────────────────────────────────────────────────
+  // handleReact
   const handleReact = async (msgId, emoji) => {
     if (!activeConv?.id || String(msgId).startsWith("tmp-")) return;
-    await apiFetch(
-      `/api/conversations/${activeConv.id}/messages/${msgId}/reactions`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emoji }),
-      },
-    ).catch(console.error);
+    await apiFetch(ENDPOINTS.CONVERSATIONS.REACTIONS(activeConv.id, msgId), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emoji }),
+    }).catch(console.error);
   };
 
+  // ── Member added ───────────────────────────────────────────────────────────
   const handleMemberAdded = (updatedConv) => {
     setConversations((prev) =>
       prev.map((c) =>
@@ -334,8 +349,9 @@ export default function ChatPage() {
       setActiveConv(updatedConv);
   };
 
+  // ── Rename ─────────────────────────────────────────────────────────────────
   const handleRename = async (conv, newName) => {
-    const res = await apiFetch(`/api/conversations/${conv.id}/name`, {
+    const res = await apiFetch(ENDPOINTS.CONVERSATIONS.NAME(conv.id), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newName }),
@@ -351,10 +367,11 @@ export default function ChatPage() {
     }
   };
 
+  // ── Delete / leave ─────────────────────────────────────────────────────────
   const handleDelete = async (conv) => {
-    await apiFetch(`/api/conversations/${conv.id}`, { method: "DELETE" }).catch(
-      console.error,
-    );
+    await apiFetch(ENDPOINTS.CONVERSATIONS.BY_ID(conv.id), {
+      method: "DELETE",
+    }).catch(console.error);
     setConversations((prev) =>
       prev.filter((c) => String(c.id) !== String(conv.id)),
     );
@@ -364,6 +381,7 @@ export default function ChatPage() {
     }
   };
 
+  // ── Logout ─────────────────────────────────────────────────────────────────
   const logout = async () => {
     await apiFetch(`/api/auth/logout`, { method: "POST" });
     router.replace("/login");
@@ -371,8 +389,8 @@ export default function ChatPage() {
 
   if (!authChecked)
     return (
-      <div className="flex items-center justify-center min-h-screen bg-bg-base">
-        <p className="text-sm text-txt-muted">Loading…</p>
+      <div className="min-h-screen flex items-center justify-center bg-bg-base">
+        <p className="text-txt-muted text-sm">Loading…</p>
       </div>
     );
   if (!user) return null;
@@ -396,14 +414,15 @@ export default function ChatPage() {
           onRename={handleRename}
           onDelete={handleDelete}
           onLeave={handleDelete}
+          isOnline={isOnline}
         />
       )}
 
       {showChat && (
-        <main className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0">
           {/* Mobile back button */}
           {isMobile && (
-            <div className="flex items-center px-4 border-b h-14 bg-bg-sidebar border-line shrink-0">
+            <div className="h-14 px-4 bg-bg-sidebar border-b border-line flex items-center shrink-0">
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="text-brand text-sm font-bold flex items-center gap-1.5 bg-transparent border-none cursor-pointer"
@@ -420,6 +439,8 @@ export default function ChatPage() {
                 onToggleSidebar={() => setSidebarOpen((v) => !v)}
                 isMobile={isMobile}
                 onMemberAdded={handleMemberAdded}
+                isOnline={isOnline}
+                currentUserId={user.id}
               />
               <MessageList
                 messages={messages}
@@ -443,12 +464,12 @@ export default function ChatPage() {
               />
             </>
           ) : (
-            <div className="flex flex-col items-center justify-center flex-1 gap-4 bg-bg-chat">
-              <div className="flex items-center justify-center w-24 h-24 text-5xl border rounded-full bg-brand-bg border-brand-border">
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-bg-chat">
+              <div className="w-24 h-24 rounded-full bg-brand-bg border border-brand-border flex items-center justify-center text-5xl">
                 💬
               </div>
               <div className="text-center">
-                <p className="mb-2 text-lg font-black text-txt-primary">
+                <p className="font-black text-lg text-txt-primary mb-2">
                   Select a conversation
                 </p>
                 <p className="text-[13.5px] text-txt-muted">

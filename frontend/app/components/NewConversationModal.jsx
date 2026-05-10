@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Avatar from "./Avatar.jsx";
 
 import { apiFetch } from "../utils/api.js";
+import { ENDPOINTS } from "../utils/endpoints.js";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -34,10 +35,7 @@ export default function NewConversationModal({ onClose, onCreated }) {
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await apiFetch(
-          `/api/users/search?q=${encodeURIComponent(search)}`,
-          {},
-        );
+        const res = await apiFetch(ENDPOINTS.USERS.SEARCH(search), {});
         const data = await res.json();
         setResults(Array.isArray(data) ? data : []);
       } catch {
@@ -54,14 +52,14 @@ export default function NewConversationModal({ onClose, onCreated }) {
       let res, data;
       if (tab === "dm") {
         if (!selected[0]) return;
-        res = await apiFetch(`/api/conversations/dm`, {
+        res = await apiFetch(ENDPOINTS.CONVERSATIONS.DM, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId: selected[0].id }),
         });
       } else if (tab === "group") {
         if (!groupName.trim()) return;
-        res = await apiFetch(`/api/conversations/group`, {
+        res = await apiFetch(ENDPOINTS.CONVERSATIONS.GROUP, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -72,7 +70,7 @@ export default function NewConversationModal({ onClose, onCreated }) {
           }),
         });
       } else {
-        res = await apiFetch(`/api/conversations/ai`, {
+        res = await apiFetch(ENDPOINTS.CONVERSATIONS.AI, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
@@ -120,18 +118,20 @@ export default function NewConversationModal({ onClose, onCreated }) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="modal-box" style={{ maxWidth: 460 }}>
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-line-strong">
-          <p className="text-base font-black text-txt-primary">
+          <p className="font-black text-base text-txt-primary">
             New Conversation
           </p>
           <button
             onClick={onClose}
-            className="flex items-center justify-center w-8 h-8 text-xl border-none rounded-lg cursor-pointer bg-bg-raised text-txt-muted hover:text-txt-primary"
+            className="w-8 h-8 rounded-lg bg-bg-raised border-none cursor-pointer text-txt-muted text-xl flex items-center justify-center hover:text-txt-primary"
           >
             ×
           </button>
         </div>
 
+        {/* Tabs */}
         <div className="flex gap-1 p-3 border-b border-line-strong">
           {TABS.map((t) => (
             <button
@@ -144,13 +144,14 @@ export default function NewConversationModal({ onClose, onCreated }) {
           ))}
         </div>
 
-        <div className="flex flex-col gap-3 p-4">
+        <div className="p-4 flex flex-col gap-3">
+          {/* AI tab */}
           {tab === "ai" && (
-            <div className="py-4 text-center">
-              <div className="flex items-center justify-center w-16 h-16 mx-auto mb-3 text-3xl border rounded-full bg-ai-bg border-ai-border">
+            <div className="text-center py-4">
+              <div className="w-16 h-16 rounded-full bg-ai-bg border border-ai-border flex items-center justify-center text-3xl mx-auto mb-3">
                 ✦
               </div>
-              <p className="mb-1 font-bold text-txt-primary">
+              <p className="font-bold text-txt-primary mb-1">
                 Personal AI Assistant
               </p>
               <p className="text-xs text-txt-muted">
@@ -159,6 +160,7 @@ export default function NewConversationModal({ onClose, onCreated }) {
             </div>
           )}
 
+          {/* Group name */}
           {tab === "group" && (
             <input
               value={groupName}
@@ -168,9 +170,10 @@ export default function NewConversationModal({ onClose, onCreated }) {
             />
           )}
 
+          {/* Search */}
           {tab !== "ai" && (
             <div className="relative">
-              <span className="absolute text-sm -translate-y-1/2 left-3 top-1/2 text-txt-muted">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-txt-muted text-sm">
                 🔍
               </span>
               <input
@@ -182,6 +185,7 @@ export default function NewConversationModal({ onClose, onCreated }) {
             </div>
           )}
 
+          {/* Selected chips */}
           {selected.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {selected.map((u) => (
@@ -194,7 +198,7 @@ export default function NewConversationModal({ onClose, onCreated }) {
                     onClick={() =>
                       setSelected((prev) => prev.filter((x) => x.id !== u.id))
                     }
-                    className="flex items-center justify-center w-4 h-4 text-xs bg-transparent border-none rounded-full cursor-pointer text-brand hover:bg-brand hover:text-white"
+                    className="w-4 h-4 rounded-full bg-transparent border-none cursor-pointer text-brand hover:bg-brand hover:text-white flex items-center justify-center text-xs"
                   >
                     ×
                   </button>
@@ -203,10 +207,11 @@ export default function NewConversationModal({ onClose, onCreated }) {
             </div>
           )}
 
+          {/* Results */}
           {(loading || results.length > 0) && (
             <div className="max-h-[200px] overflow-y-auto rounded-xl border border-line overflow-hidden">
               {loading && (
-                <p className="py-3 text-sm text-center text-txt-muted">
+                <p className="text-center text-txt-muted text-sm py-3">
                   Searching…
                 </p>
               )}
@@ -218,23 +223,24 @@ export default function NewConversationModal({ onClose, onCreated }) {
                 >
                   <Avatar name={u.name} size={36} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate text-txt-primary">
+                    <p className="font-bold text-sm text-txt-primary truncate">
                       {u.name}
                     </p>
                     <p className="text-xs text-txt-muted">{u.email}</p>
                   </div>
                   {selected.some((s) => s.id === u.id) && (
-                    <span className="text-lg text-brand">✓</span>
+                    <span className="text-brand text-lg">✓</span>
                   )}
                 </div>
               ))}
             </div>
           )}
 
+          {/* AI toggle for groups */}
           {tab === "group" && (
             <label className="flex items-center justify-between px-3.5 py-3 rounded-xl bg-bg-raised border border-line cursor-pointer">
               <div>
-                <p className="text-sm font-bold text-txt-primary">Enable AI</p>
+                <p className="font-bold text-sm text-txt-primary">Enable AI</p>
                 <p className="text-xs text-txt-muted mt-0.5">
                   AI responds to {aiTrigger} command
                 </p>

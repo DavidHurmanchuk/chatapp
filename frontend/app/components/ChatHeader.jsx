@@ -9,6 +9,8 @@ export default function ChatHeader({
   onToggleSidebar,
   isMobile,
   onMemberAdded,
+  isOnline,
+  currentUserId,
 }) {
   const [showAddMember, setShowAddMember] = useState(false);
 
@@ -18,6 +20,12 @@ export default function ChatHeader({
   const name = isAI ? "AI Assistant" : activeConv?.name;
   const members = activeConv?.members ?? [];
 
+  const dmPartner =
+    activeConv?.type === "dm"
+      ? members.find((m) => String(m.id) !== String(currentUserId))
+      : null;
+  const dmOnline = dmPartner ? isOnline?.(dmPartner.id) : false;
+
   const subtitle = isAI
     ? "Llama 3.3 · Always online"
     : isGroupAI
@@ -25,16 +33,19 @@ export default function ChatHeader({
       : isGroup
         ? `${members.length} members`
         : activeConv?.type === "dm"
-          ? "Direct message"
+          ? dmOnline
+            ? "Online"
+            : "Offline"
           : "";
 
   return (
     <>
       <header className="h-[60px] px-4 bg-bg-sidebar border-b border-line flex items-center gap-3 shrink-0">
+        {/* Бургер тільки на десктопі */}
         {!isMobile && (
           <button
             onClick={onToggleSidebar}
-            className="flex items-center justify-center text-lg transition-colors bg-transparent border-none cursor-pointer w-9 h-9 rounded-xl text-txt-muted hover:text-txt-primary shrink-0"
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-lg text-txt-muted bg-transparent border-none cursor-pointer transition-colors hover:text-txt-primary shrink-0"
           >
             ☰
           </button>
@@ -47,9 +58,21 @@ export default function ChatHeader({
               <p className="font-black text-[15px] text-txt-primary tracking-tight truncate">
                 {name}
               </p>
-              <p className="text-[12px] text-txt-muted">{subtitle}</p>
+              <div className="flex items-center gap-1.5">
+                {activeConv?.type === "dm" && (
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${dmOnline ? "bg-success" : "bg-txt-muted"}`}
+                  />
+                )}
+                <p
+                  className={`text-[12px] ${activeConv?.type === "dm" && dmOnline ? "text-success" : "text-txt-muted"}`}
+                >
+                  {subtitle}
+                </p>
+              </div>
             </div>
 
+            {/* Add member */}
             {isGroup && (
               <button
                 onClick={() => setShowAddMember(true)}

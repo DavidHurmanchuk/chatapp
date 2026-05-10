@@ -2,26 +2,30 @@ import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import passport from "passport";
+import { config } from "../config/index.js";
+import { HTTP_STATUS } from "../constants/http.js";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as GitHubStrategy } from "passport-github2";
 import User from "../models/User.js";
 
 const router = express.Router();
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function generateToken(user) {
   return jwt.sign(
     { id: user._id, name: user.name, email: user.email },
-    process.env.JWT_SECRET,
+    config.JWT_SECRET,
     { expiresIn: "7d" },
   );
 }
 
+// ─── Passport: Google ─────────────────────────────────────────────────────────
 passport.use(
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: `${process.env.BACKEND_URL || "http://localhost:4000"}/api/auth/google/callback`,
+      callbackURL: `${config.BACKEND_URL}/api/auth/google/callback`,
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
@@ -47,12 +51,13 @@ passport.use(
   ),
 );
 
+// ─── Passport: GitHub ─────────────────────────────────────────────────────────
 passport.use(
   new GitHubStrategy(
     {
       clientID: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
-      callbackURL: `${process.env.BACKEND_URL || "http://localhost:4000"}/api/auth/github/callback`,
+      callbackURL: `${config.BACKEND_URL}/api/auth/github/callback`,
       scope: ["user:email"],
     },
     async (accessToken, refreshToken, profile, done) => {
@@ -88,37 +93,45 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
+// ─── Auth middleware ───────────────────────────────────────────────────────────
+// Читаємо токен з Authorization header АБО з куки (для сумісності)
 export function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   const token =
     (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null) ||
     req.cookies?.token;
 
-  if (!token) return res.status(401).json({ error: "Not authenticated" });
+  if (!token)
+    return res
+      .status(HTTP_STATUS.UNAUTHORIZED)
+      .json({ error: "Not authenticated" });
 
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = jwt.verify(token, config.JWT_SECRET);
     next();
   } catch {
-    res.status(401).json({ error: "Invalid token" });
+    res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: "Invalid token" });
   }
 }
 
+// ─── Register ─────────────────────────────────────────────────────────────────
 router.post("/register", async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password)
     return res
-      .status(400)
+      .status(HTTP_STATUS.BAD_REQUEST)
       .json({ error: "name, email and password are required" });
   if (password.length < 6)
     return res
-      .status(400)
+      .status(HTTP_STATUS.BAD_REQUEST)
       .json({ error: "Password must be at least 6 characters" });
 
   try {
     const existing = await User.findOne({ email });
     if (existing)
-      return res.status(409).json({ error: "Email already in use" });
+      return res
+        .status(HTTP_STATUS.CONFLICT)
+        .json({ error: "Email already in use" });
 
     const hashed = await bcrypt.hash(password, 12);
     const user = await User.create({
@@ -129,7 +142,7 @@ router.post("/register", async (req, res) => {
     });
     const token = generateToken(user);
 
-    res.status(201).json({
+    res.status(HTTP_STATUS.CREATED).json({
       token,
       user: {
         id: user._id,
@@ -140,23 +153,32 @@ router.post("/register", async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Registration failed" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Registration failed" });
   }
 });
 
+// ─── Login ────────────────────────────────────────────────────────────────────
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
-    return res.status(400).json({ error: "email and password are required" });
+    return res
+      .status(HTTP_STATUS.BAD_REQUEST)
+      .json({ error: "email and password are required" });
 
   try {
     const user = await User.findOne({ email });
     if (!user || !user.password)
-      return res.status(401).json({ error: "Invalid email or password" });
+      return res
+        .status(HTTP_STATUS.UNAUTHORIZED)
+        .json({ error: "Invalid email or password" });
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid)
-      return res.status(401).json({ error: "Invalid email or password" });
+      return res
+        .status(HTTP_STATUS.UNAUTHORIZED)
+        .json({ error: "Invalid email or password" });
 
     const token = generateToken(user);
     res.json({
@@ -170,18 +192,26 @@ router.post("/login", async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Login failed" });
+    res
+      .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+      .json({ error: "Login failed" });
   }
 });
 
+// ─── Logout ───────────────────────────────────────────────────────────────────
 router.post("/logout", (req, res) => {
   res.json({ message: "Logged out" });
+  // Токен видаляється на фронтенді з localStorage
 });
 
+// ─── Me ───────────────────────────────────────────────────────────────────────
 router.get("/me", authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user)
+      return res
+        .status(HTTP_STATUS.NOT_FOUND)
+        .json({ error: "User not found" });
     res.json({
       user: {
         id: user._id,
@@ -191,10 +221,11 @@ router.get("/me", authMiddleware, async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: "Failed" });
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: "Failed" });
   }
 });
 
+// ─── Google OAuth ─────────────────────────────────────────────────────────────
 router.get(
   "/google",
   passport.authenticate("google", { scope: ["profile", "email"] }),
@@ -204,14 +235,16 @@ router.get(
   "/google/callback",
   passport.authenticate("google", {
     session: false,
-    failureRedirect: `${process.env.FRONTEND_URL}/login?error=google`,
+    failureRedirect: `${config.FRONTEND_URL}/login?error=google`,
   }),
   (req, res) => {
     const token = generateToken(req.user);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
+    // Передаємо токен через URL — фронтенд збереже в localStorage
+    res.redirect(`${config.FRONTEND_URL}/auth/callback?token=${token}`);
   },
 );
 
+// ─── GitHub OAuth ─────────────────────────────────────────────────────────────
 router.get(
   "/github",
   passport.authenticate("github", { scope: ["user:email"] }),
@@ -221,11 +254,11 @@ router.get(
   "/github/callback",
   passport.authenticate("github", {
     session: false,
-    failureRedirect: `${process.env.FRONTEND_URL}/login?error=github`,
+    failureRedirect: `${config.FRONTEND_URL}/login?error=github`,
   }),
   (req, res) => {
     const token = generateToken(req.user);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
+    res.redirect(`${config.FRONTEND_URL}/auth/callback?token=${token}`);
   },
 );
 

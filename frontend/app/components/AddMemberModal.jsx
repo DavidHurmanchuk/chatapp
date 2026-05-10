@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Avatar from "./Avatar.jsx";
 
 import { apiFetch } from "../utils/api.js";
+import { ENDPOINTS } from "../utils/endpoints.js";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -31,10 +32,7 @@ export default function AddMemberModal({
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await apiFetch(
-          `/api/users/search?q=${encodeURIComponent(search)}`,
-          {},
-        );
+        const res = await apiFetch(ENDPOINTS.USERS.SEARCH(search), {});
         const data = await res.json();
         setResults(
           (Array.isArray(data) ? data : []).filter(
@@ -52,7 +50,7 @@ export default function AddMemberModal({
   const handleAdd = async (user) => {
     setAdding(user.id);
     try {
-      const res = await apiFetch(`/api/conversations/${conv.id}/members`, {
+      const res = await apiFetch(ENDPOINTS.CONVERSATIONS.MEMBERS(conv.id), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id }),
@@ -80,22 +78,24 @@ export default function AddMemberModal({
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="modal-box">
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-line-strong">
           <div>
-            <p className="text-base font-black text-txt-primary">Add Member</p>
+            <p className="font-black text-base text-txt-primary">Add Member</p>
             <p className="text-xs text-txt-muted mt-0.5">to {conv.name}</p>
           </div>
           <button
             onClick={onClose}
-            className="flex items-center justify-center w-8 h-8 text-xl transition-colors border-none rounded-lg cursor-pointer bg-bg-raised text-txt-muted hover:text-txt-primary"
+            className="w-8 h-8 rounded-lg bg-bg-raised border-none cursor-pointer text-txt-muted text-xl flex items-center justify-center transition-colors hover:text-txt-primary"
           >
             ×
           </button>
         </div>
 
+        {/* Search */}
         <div className="px-5 py-3.5">
           <div className="relative">
-            <span className="absolute text-sm -translate-y-1/2 left-3 top-1/2 text-txt-muted">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-txt-muted text-sm">
               🔍
             </span>
             <input
@@ -108,20 +108,22 @@ export default function AddMemberModal({
           </div>
         </div>
 
+        {/* Success */}
         {success && (
           <div className="mx-5 mb-3 px-3.5 py-2.5 rounded-xl bg-ai-badge border border-ai-border text-ai text-sm font-semibold">
             ✓ {success} added to the group
           </div>
         )}
 
+        {/* Results */}
         <div className="max-h-[280px] overflow-y-auto px-2 pb-2">
           {loading && (
-            <p className="py-4 text-sm text-center text-txt-muted">
+            <p className="text-center text-txt-muted text-sm py-4">
               Searching…
             </p>
           )}
           {!loading && search && results.length === 0 && (
-            <p className="py-4 text-sm text-center text-txt-muted">
+            <p className="text-center text-txt-muted text-sm py-4">
               No users found
             </p>
           )}
@@ -133,7 +135,7 @@ export default function AddMemberModal({
             >
               <Avatar name={u.name} size={40} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold truncate text-txt-primary">
+                <p className="font-bold text-sm text-txt-primary truncate">
                   {u.name}
                 </p>
                 <p className="text-xs text-txt-muted">{u.email}</p>
@@ -148,6 +150,7 @@ export default function AddMemberModal({
             </div>
           ))}
 
+          {/* Current members */}
           {!search && existingMembers.length > 0 && (
             <div className="px-3 pt-2">
               <p className="text-[11px] font-bold text-txt-muted uppercase tracking-widest mb-2">
